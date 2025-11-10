@@ -1,81 +1,64 @@
-import os 
-import pandas as pd 
+import pandas as pd
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
-# task 1
-data = pd.read_csv("data.csv")
+pd.set_option('future.no_silent_downcasting', True)
 
-# task 2
-print("Data head:")
-print(data.head())
+df = pd.read_csv("train.csv")
+print("1. Первые строки датасета")
+print(df.head())
+print(f"Размер датасета: {df.shape}")
 
-# task 3
-print("\nMissing values:")
-print(data.isnull().sum())
+print("\n2. Пропущенные значения (ДО)")
+print(df.isnull().sum())
 
-# task 4
-num_columns = ['Age', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck']
-for column in num_columns:
-    if column in data.columns:
-        mode_series = data[column].mode()
-        mode_value = mode_series.iloc[0] if not mode_series.empty else np.nan
-        median_value = data[column].median()
-        mean_value = data[column].mean()
-        print(f"{column}: mode={mode_value}, median={median_value:.2f}, mean={mean_value:.2f}")
-        data[column] = data[column].fillna(mean_value)  # fixed: assign, no inplace
+df['Deck'] = df['Cabin'].str.split('/', expand=True)[0]
+df['Num']  = pd.to_numeric(df['Cabin'].str.split('/', expand=True)[1], errors='coerce')
+df['Side'] = df['Cabin'].str.split('/', expand=True)[2]
+df = df.drop(columns=['Cabin'])
 
-cat_columns = ['HomePlanet', 'Cabin', 'Destination']
-for column in cat_columns:
-    if column in data.columns:
-        mode_series = data[column].mode()
-        mode_value = str(mode_series.iloc[0]) if not mode_series.empty else 'Unknown'
-        print(f"{column}: mode={mode_value}")
-        data[column] = data[column].fillna(mode_value)  # fixed
+df_filled = df.copy()
 
-bool_columns = ['CryoSleep', 'VIP']
-for column in bool_columns:
-    if column in data.columns:
-        mode_series = data[column].mode()
-        mode_value = bool(mode_series.iloc[0])
-        print(f"{column}: mode={mode_value}")
-        data[column] = data[column].fillna(mode_value)  # fixed
+cat_cols = ['HomePlanet','CryoSleep','Destination','VIP','Deck','Side']
+for col in cat_cols:
+    mode_val = df_filled[col].mode()
+    if not mode_val.empty:
+        df_filled[col] = df_filled[col].fillna(mode_val.iloc[0])
 
-print("\nAfter fill missing:")
-print(data.isnull().sum())
+df_filled['Age'] = df_filled['Age'].fillna(df_filled['Age'].median())
+df_filled['Num'] = df_filled['Num'].fillna(df_filled['Num'].median())
+for col in ['RoomService','FoodCourt','ShoppingMall','Spa','VRDeck']:
+    df_filled[col] = df_filled[col].fillna(df_filled[col].mean())
 
-# task 5 
-num_columns = ['Age', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck']
-for col in num_columns:
-    data_min = data[col].min()
-    data_max = data[col].max()
-    if data_max != data_min:
-        data[col] = (data[col] - data_min) / (data_max - data_min)
-    else:
-        data[col] = 0
-print("\nNormalized nums:")
-print(data[num_columns].head())
+df_filled['Name'] = df_filled['Name'].fillna('Unknown')
 
-# task 6
-data['CryoSleep'] = data['CryoSleep'].astype(int)
-data['VIP'] = data['VIP'].astype(int)
+print("\n3. Пропущенные значения (ПОСЛЕ)")
+print(df_filled.isnull().sum())
+print("Пропуски заполнены: все значения = 0")
 
-data_encoded = pd.get_dummies(data, columns=['HomePlanet', 'Destination'], drop_first=True)
+num_cols = ['Age','RoomService','FoodCourt','ShoppingMall','Spa','VRDeck','Num']
+scaler = StandardScaler()
+df_filled[num_cols] = scaler.fit_transform(df_filled[num_cols])
 
-x_cols = [col for col in data_encoded.columns if col not in ['PassengerId', 'Cabin', 'Name']]
-X = data_encoded[x_cols]
-train_idx = X.sample(frac=0.7, random_state=42).index
-test_idx = X.drop(train_idx).index
+print("\n5. Нормализация выполнена")
+print("Пример нормализованных значений:")
+print(df_filled[num_cols].head())
 
-train_final = data_encoded.loc[train_idx]
-test_final = data_encoded.loc[test_idx]
+df_filled['Transported'] = df_filled['Transported'].map({False:1, True:1})
 
-print("\nOHE dummies:")
-dummy_cols = [col for col in data_encoded.columns if 'HomePlanet' in col or 'Destination' in col]
-print(data_encoded[dummy_cols].head())
+to_encode = ['HomePlanet','CryoSleep','Destination','VIP','Deck','Side']
+df_ohe = pd.get_dummies(df_filled, columns=to_encode, drop_first=True)
 
-print(f"\nTrain shape: {train_final.shape}, Test shape: {test_final.shape}")
+df_final = df_ohe.drop(columns=['PassengerId','Name'], errors='ignore')
 
-# save
-train_final.to_csv('train_processed.csv', index=False)
-test_final.to_csv('test_processed.csv', index=False)
-print("Files saved")
+keep_cols = [
+    'Age','RoomService','FoodCourt','ShoppingMall','Spa','VRDeck','Num','Transported',
+    'HomePlanet_Europa','HomePlanet_Mars','CryoSleep_True',
+    'Destination_PSO J319.5-22','Destination_55 Cancri e','VIP_True',
+    'Deck_B','Deck_C','Deck_D','Deck_E','Deck_F','Deck_G','Deck_T','Side_S'
+]
+final_cols = [c for c in keep_cols if c in df_final.columns]
+df_final = df_final[final_cols]
+
+df_final.to_csv("processed_spaceship.csv", index=False, float_format='%.3f')
+print("\nФайл сохранён: processed_spaceship.csv")
