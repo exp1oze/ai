@@ -1,93 +1,102 @@
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression, Ridge, LogisticRegression
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import (
+        mean_squared_error, 
+        mean_absolute_error, 
+        r2_score, 
+        confusion_matrix, 
+        classification_report) 
 
-df = pd.read_csv("Heart_disease_cleveland_new 2.csv")
+data = pd.read_csv("data.csv")
 
-X_reg = df.drop(columns=['age', 'target'])
-y_reg = df['age']
+data = data.drop(columns=["id_number"])
 
-y_clf = (df['target'] > 0).astype(int)
-X_clf = df.drop(columns=['target'])
+numeric_cols = data.select_dtypes(include=["number"]).columns.drop("charges")
+data[numeric_cols] = data[numeric_cols].fillna(data[numeric_cols].median())
 
-X_reg_train, X_reg_test, y_reg_train, y_reg_test = train_test_split(
-    X_reg, y_reg, test_size=0.2, random_state=42
+categorical_cols = data.select_dtypes(include=['object', 'bool']).columns
+if len(categorical_cols) > 0:
+    data[categorical_cols] = data[categorical_cols].fillna(
+        data[categorical_cols].mode().iloc[0]
+    )
+
+scaler = StandardScaler()
+scaler.fit(data[numeric_cols])
+data[numeric_cols] = pd.DataFrame(
+    scaler.transform(data[numeric_cols]), columns=numeric_cols
 )
-X_clf_train, X_clf_test, y_clf_train, y_clf_test = train_test_split(
-    X_clf, y_clf, test_size=0.2, random_state=42
+
+if len(categorical_cols) > 0:
+    data = pd.get_dummies(data, columns=categorical_cols, drop_first=True)
+
+data.to_csv("preprocessed_data.csv", index=False)
+
+#Task 1
+X = data.drop(columns=["charges"], axis=1)
+y = data["charges"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.4, random_state=42
+)
+X_test, X_val, y_test, y_val = train_test_split(
+    X_test, y_test, test_size=0.4, random_state=42
 )
 
-lr = LinearRegression()
-lr.fit(X_reg_train, y_reg_train)
-y_reg_pred = lr.predict(X_reg_test)
+polinom = PolynomialFeatures()
+polinom.fit(X_train)
+X_train = polinom.transform(X_train)
+X_test = polinom.transform(X_test)
 
-mse = mean_squared_error(y_reg_test, y_reg_pred)
-rmse = np.sqrt(mse)
-mae = mean_absolute_error(y_reg_test, y_reg_pred)
-r2 = r2_score(y_reg_test, y_reg_pred)
+#Task 2
+linear_model = LinearRegression()
+linear_model.fit(X_train, y_train)
+y_pred_test = linear_model.predict(X_test)
 
-print(f"Linear Regression Metrics:")
-print(f"MSE: {mse:.4f}")
-print(f"RMSE: {rmse:.4f}")
-print(f"MAE: {mae:.4f}")
-print(f"R²: {r2:.4f}")
+#Task 3
+MSE = mean_squared_error(y_test, y_pred_test)
+RMSE = np.sqrt(MSE)
+MAE = mean_absolute_error(y_test, y_pred_test)
+R2 = r2_score(y_test, y_pred_test)
+print(f"MSE: {MSE}\nRMSE: {RMSE}\nMAE: {MAE}\nR2: {R2}\n")
 
-ridge = Ridge(alpha=1.0)
-ridge.fit(X_reg_train, y_reg_train)
-y_reg_pred_ridge = ridge.predict(X_reg_test)
-r2_ridge = r2_score(y_reg_test, y_reg_pred_ridge)
+data["charges_binary"] = (data["charges"] > data["charges"].median()).astype(int)
 
-print(f"\nRidge Regression R²: {r2_ridge:.4f}")
+X = data.drop(columns=["charges", "charges_binary"])
+y = data["charges_binary"]
 
-plt.figure(figsize=(8, 6))
-plt.scatter(y_reg_test, y_reg_pred, alpha=0.5)
-plt.plot([y_reg_test.min(), y_reg_test.max()], [y_reg_test.min(), y_reg_test.max()], 'r--')
-plt.xlabel("Реальный возраст")
-plt.ylabel("Предсказанный возраст")
-plt.title("Регрессия: Реальный vs Предсказанный возраст")
-plt.grid(True)
-plt.tight_layout()
-plt.savefig("regression_age_plot.png")
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.4, random_state=42
+)
+X_test, X_val, y_test, y_val = train_test_split(
+    X_test, y_test, test_size=0.4, random_state=42
+)
+
+polinom = PolynomialFeatures()
+polinom.fit(X_train)
+X_train = polinom.transform(X_train)
+X_test = polinom.transform(X_test)
+
+#Task 4 
+logistic_model = LogisticRegression(
+    class_weight='balanced',
+    max_iter=1000
+)
+logistic_model.fit(X_train, y_train)
+y_pred_test = logistic_model.predict(X_test)
+
+#Task 5
+report = classification_report(y_test, y_pred_test)
+print(report)
+
+cm = confusion_matrix(y_test, y_pred_test)
+plt.figure(figsize=(4, 3))
+sns.heatmap(cm, annot=True, fmt="d", cmap="bwr")
+plt.ylabel("True label")
+plt.xlabel("Predicted label")
 plt.show()
-
-logreg = LogisticRegression(max_iter=1000)
-logreg.fit(X_clf_train, y_clf_train)
-y_clf_pred = logreg.predict(X_clf_test)
-y_clf_proba = logreg.predict_proba(X_clf_test)[:, 1]
-
-acc = accuracy_score(y_clf_test, y_clf_pred)
-print(f"\nClassification Accuracy: {acc:.4f}")
-print("\nClassification Report:")
-print(classification_report(y_clf_test, y_clf_pred, target_names=['No Disease', 'Disease']))
-
-cm = confusion_matrix(y_clf_test, y_clf_pred)
-plt.figure(figsize=(6, 5))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['No Disease', 'Disease'], 
-            yticklabels=['No Disease', 'Disease'])
-plt.title("Матрица ошибок")
-plt.ylabel("Реальный класс")
-plt.xlabel("Предсказанный класс")
-plt.tight_layout()
-plt.savefig("confusion_matrix.png")
-plt.show()
-
-logreg_l1 = LogisticRegression(penalty='l1', solver='liblinear', max_iter=1000)
-logreg_l1.fit(X_clf_train, y_clf_train)
-y_clf_pred_l1 = logreg_l1.predict(X_clf_test)
-acc_l1 = accuracy_score(y_clf_test, y_clf_pred_l1)
-print(f"\nL1 Logistic Regression Accuracy: {acc_l1:.4f}")
-
-results = pd.DataFrame({
-    'Age_Real': y_reg_test.values, 
-    'Age_Pred': y_reg_pred, 
-    'Disease_Real': y_clf_test.values, 
-    'Disease_Pred': y_clf_pred, 
-    'Disease_Proba': y_clf_proba
-})
-results.to_csv("lab2_predictions.csv", index=False)
